@@ -1,5 +1,4 @@
 ---
----
 - name: Setup MariaDB Server
   hosts: db
   become: yes
