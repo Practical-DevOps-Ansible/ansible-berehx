@@ -64,22 +64,20 @@
         dest: /var/www/laravel-app
         force: yes
 
-    - name: Set Permissions for Storage and Cache
+    - name: Set Project Ownership
       file:
-        path: "{{ item }}"
+        path: /var/www/laravel-app
         owner: www-data
         group: www-data
-        mode: '0775'
         recurse: yes
-      loop:
-        - /var/www/laravel-app/storage
-        - /var/www/laravel-app/bootstrap/cache
 
     - name: Configure .env
       copy:
         src: /var/www/laravel-app/.env.example
         dest: /var/www/laravel-app/.env
         remote_src: yes
+        owner: www-data
+        group: www-data
 
     - name: Update .env database settings
       lineinfile:
@@ -96,18 +94,24 @@
       shell: composer install --no-interaction --no-dev
       args:
         chdir: /var/www/laravel-app
+      become: yes
       become_user: www-data
+      environment:
+        HOME: /tmp
 
     - name: Generate App Key
       shell: php artisan key:generate
       args:
         chdir: /var/www/laravel-app
+      become: yes
+      become_user: www-data
 
     - name: Run Database Migrations
       shell: php artisan migrate --force
       args:
         chdir: /var/www/laravel-app
-      register: migration_result
+      become: yes
+      become_user: www-data
       ignore_errors: yes
 
     - name: Configure Apache VirtualHost
