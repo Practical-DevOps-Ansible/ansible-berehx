@@ -3,13 +3,13 @@
   hosts: db
   become: yes
   tasks:
-    - name: Install MariaDB and Python MySQL support
+    - name: Install MariaDB and Python support
       apt:
         name: [mariadb-server, python3-mysqldb]
         state: present
         update_cache: yes
 
-    - name: Start MariaDB
+    - name: Ensure MariaDB is running
       service:
         name: mariadb
         state: started
@@ -47,49 +47,85 @@
   hosts: server
   become: yes
   tasks:
-    - name: Install Apache and PHP
+    - name: Install Dependencies
       apt:
-        name: [apache2, php, libapache2-mod-php, php-mysql, php-xml, git, curl]
+        name: [apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, git, curl, unzip]
         state: present
         update_cache: yes
 
-    - name: Clone App
+    - name: Install Composer
+      shell: curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+      args:
+        creates: /usr/local/bin/composer
+
+    - name: Clone Repository
       git:
         repo: 'https://github.com/Practical-DevOps/app-for-devops.git'
         dest: /var/www/laravel-app
         force: yes
 
-    - name: Configure .env file
-      shell: |
-        cp .env.example .env
-        sed -i 's/DB_HOST=.*/DB_HOST={{ db_host }}/' .env
-        sed -i 's/DB_DATABASE=.*/DB_DATABASE={{ db_name }}/' .env
-        sed -i 's/DB_USERNAME=.*/DB_USERNAME={{ db_user }}/' .env
-        sed -i 's/DB_PASSWORD=.*/DB_PASSWORD={{ db_pass }}/' .env
+    - name: Set Permissions for Storage and Cache
+      file:
+        path: "{{ item }}"
+        owner: www-data
+        group: www-data
+        mode: '0775'
+        recurse: yes
+      loop:
+        - /var/www/laravel-app/storage
+        - /var/www/laravel-app/bootstrap/cache
+
+    - name: Configure .env
+      copy:
+        src: /var/www/laravel-app/.env.example
+        dest: /var/www/laravel-app/.env
+        remote_src: yes
+
+    - name: Update .env database settings
+      lineinfile:
+        path: /var/www/laravel-app/.env
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^DB_HOST=', line: 'DB_HOST={{ db_host }}' }
+        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE={{ db_name }}' }
+        - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME={{ db_user }}' }
+        - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD={{ db_pass }}' }
+
+    - name: Install Composer Dependencies
+      shell: composer install --no-interaction --no-dev
+      args:
+        chdir: /var/www/laravel-app
+      become_user: www-data
+
+    - name: Generate App Key
+      shell: php artisan key:generate
       args:
         chdir: /var/www/laravel-app
 
-    - name: Set Permissions
-      file:
-        path: /var/www/laravel-app/storage
-        owner: www-data
-        group: www-data
-        recurse: yes
+    - name: Run Database Migrations
+      shell: php artisan migrate --force
+      args:
+        chdir: /var/www/laravel-app
+      register: migration_result
+      ignore_errors: yes
 
-    - name: Apache Config
+    - name: Configure Apache VirtualHost
       copy:
         dest: /etc/apache2/sites-available/laravel.conf
         content: |
           <VirtualHost *:80>
               DocumentRoot /var/www/laravel-app/public
               <Directory /var/www/laravel-app/public>
+                  Options Indexes FollowSymLinks
                   AllowOverride All
                   Require all granted
               </Directory>
           </VirtualHost>
 
-    - name: Enable Site
+    - name: Enable Site and Rewrite Module
       shell: |
+        a2enmod rewrite
         a2ensite laravel.conf
         a2dissite 000-default.conf
       notify: Restart Apache
