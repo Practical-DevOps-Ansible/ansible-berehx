@@ -71,8 +71,10 @@
         owner: www-data
         group: www-data
         recurse: yes
+        state: directory
 
     - name: Configure .env
+      become_user: www-data
       shell: cp .env.example .env
       args:
         chdir: /var/www/laravel-app
@@ -83,6 +85,8 @@
         path: /var/www/laravel-app/.env
         regexp: "{{ item.regexp }}"
         line: "{{ item.line }}"
+        owner: www-data
+        group: www-data
       loop:
         - { regexp: '^DB_HOST=', line: 'DB_HOST=127.0.0.1' }
         - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE={{ db_name }}' }
@@ -93,6 +97,7 @@
       shell: composer install --no-interaction --no-dev
       args:
         chdir: /var/www/laravel-app
+      become: yes
       become_user: www-data
       environment:
         HOME: /tmp
@@ -101,6 +106,7 @@
       shell: php artisan key:generate --force
       args:
         chdir: /var/www/laravel-app
+      become: yes
       become_user: www-data
       environment:
         HOME: /tmp
@@ -108,4 +114,38 @@
     - name: Run Migrations
       shell: php artisan migrate --force
       args:
-        chdir: /var/www/laravel
+        chdir: /var/www/laravel-app
+      become: yes
+      become_user: www-data
+      environment:
+        HOME: /tmp
+
+    - name: Final Permissions Fix
+      file:
+        path: /var/www/laravel-app/storage
+        owner: www-data
+        group: www-data
+        mode: '0777'
+        recurse: yes
+
+    - name: Configure Apache VHost
+      copy:
+        dest: /etc/apache2/sites-available/000-default.conf
+        content: |
+          <VirtualHost *:80>
+              DocumentRoot /var/www/laravel-app/public
+              <Directory /var/www/laravel-app/public>
+                  AllowOverride All
+                  Require all granted
+              </Directory>
+          </VirtualHost>
+
+    - name: Enable Rewrite
+      shell: a2enmod rewrite
+      notify: Restart Apache
+
+  handlers:
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
