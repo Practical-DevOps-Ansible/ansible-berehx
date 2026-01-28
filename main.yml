@@ -21,7 +21,7 @@
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
-    - name: Create DB User (Multiple Hosts)
+    - name: Create DB User
       mysql_user:
         name: "{{ db_user }}"
         password: "{{ db_pass }}"
@@ -66,7 +66,7 @@
         dest: /var/www/laravel-app
         force: yes
 
-    - name: Set Project Ownership
+    - name: Set Ownership
       file:
         path: /var/www/laravel-app
         owner: www-data
@@ -78,8 +78,6 @@
         src: /var/www/laravel-app/.env.example
         dest: /var/www/laravel-app/.env
         remote_src: yes
-        owner: www-data
-        group: www-data
 
     - name: Update .env settings
       lineinfile:
@@ -89,7 +87,6 @@
       loop:
         - { regexp: '^DB_CONNECTION=', line: 'DB_CONNECTION=mysql' }
         - { regexp: '^DB_HOST=', line: 'DB_HOST=127.0.0.1' }
-        - { regexp: '^DB_PORT=', line: 'DB_PORT=3306' }
         - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE={{ db_name }}' }
         - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME={{ db_user }}' }
         - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD={{ db_pass }}' }
@@ -110,20 +107,25 @@
       become: yes
       become_user: www-data
 
-    - name: Run Database Migrations
-      shell: php artisan migrate --force
+    - name: Run Migrations Fresh
+      shell: php artisan migrate:fresh --force
       args:
         chdir: /var/www/laravel-app
       become: yes
       become_user: www-data
 
-    - name: Fix storage permissions
+    - name: Fix Storage Permissions (Final)
       file:
-        path: /var/www/laravel-app/storage
+        path: "{{ item }}"
+        owner: www-data
+        group: www-data
         mode: '0777'
         recurse: yes
+      loop:
+        - /var/www/laravel-app/storage
+        - /var/www/laravel-app/bootstrap/cache
 
-    - name: Configure Apache VirtualHost
+    - name: Configure Apache
       copy:
         dest: /etc/apache2/sites-available/laravel.conf
         content: |
@@ -135,7 +137,7 @@
               </Directory>
           </VirtualHost>
 
-    - name: Enable Site and Rewrite
+    - name: Enable Everything
       shell: |
         a2enmod rewrite
         a2ensite laravel.conf
