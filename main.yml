@@ -73,11 +73,13 @@
         group: www-data
         recurse: yes
 
-    - name: Configure .env
+    - name: Configure .env file
       copy:
         src: /var/www/laravel-app/.env.example
         dest: /var/www/laravel-app/.env
         remote_src: yes
+        owner: www-data
+        group: www-data
 
     - name: Update .env settings
       lineinfile:
@@ -106,15 +108,19 @@
         chdir: /var/www/laravel-app
       become: yes
       become_user: www-data
+      environment:
+        HOME: /tmp
 
-    - name: Run Migrations Fresh
+    - name: Run Migrations
       shell: php artisan migrate:fresh --force
       args:
         chdir: /var/www/laravel-app
       become: yes
       become_user: www-data
+      environment:
+        HOME: /tmp
 
-    - name: Fix Storage Permissions (Final)
+    - name: Fix Storage Permissions
       file:
         path: "{{ item }}"
         owner: www-data
@@ -123,29 +129,3 @@
         recurse: yes
       loop:
         - /var/www/laravel-app/storage
-        - /var/www/laravel-app/bootstrap/cache
-
-    - name: Configure Apache
-      copy:
-        dest: /etc/apache2/sites-available/laravel.conf
-        content: |
-          <VirtualHost *:80>
-              DocumentRoot /var/www/laravel-app/public
-              <Directory /var/www/laravel-app/public>
-                  AllowOverride All
-                  Require all granted
-              </Directory>
-          </VirtualHost>
-
-    - name: Enable Everything
-      shell: |
-        a2enmod rewrite
-        a2ensite laravel.conf
-        a2dissite 000-default.conf
-      notify: Restart Apache
-
-  handlers:
-    - name: Restart Apache
-      service:
-        name: apache2
-        state: restarted
