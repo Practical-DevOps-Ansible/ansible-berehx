@@ -26,11 +26,10 @@
         name: "{{ db_user }}"
         password: "{{ db_pass }}"
         priv: "{{ db_name }}.*:ALL"
-        host: "{{ item }}"
+        host: "%"
         state: present
         plugin: mysql_native_password
         login_unix_socket: /var/run/mysqld/mysqld.sock
-      loop: ['%', 'localhost', '127.0.0.1']
 
     - name: Allow Remote Connections
       lineinfile:
@@ -73,13 +72,11 @@
         group: www-data
         recurse: yes
 
-    - name: Configure .env file
-      copy:
-        src: /var/www/laravel-app/.env.example
-        dest: /var/www/laravel-app/.env
-        remote_src: yes
-        owner: www-data
-        group: www-data
+    - name: Configure .env
+      shell: cp .env.example .env
+      args:
+        chdir: /var/www/laravel-app
+        creates: /var/www/laravel-app/.env
 
     - name: Update .env settings
       lineinfile:
@@ -87,7 +84,6 @@
         regexp: "{{ item.regexp }}"
         line: "{{ item.line }}"
       loop:
-        - { regexp: '^DB_CONNECTION=', line: 'DB_CONNECTION=mysql' }
         - { regexp: '^DB_HOST=', line: 'DB_HOST=127.0.0.1' }
         - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE={{ db_name }}' }
         - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME={{ db_user }}' }
@@ -97,7 +93,6 @@
       shell: composer install --no-interaction --no-dev
       args:
         chdir: /var/www/laravel-app
-      become: yes
       become_user: www-data
       environment:
         HOME: /tmp
@@ -106,26 +101,11 @@
       shell: php artisan key:generate --force
       args:
         chdir: /var/www/laravel-app
-      become: yes
       become_user: www-data
       environment:
         HOME: /tmp
 
     - name: Run Migrations
-      shell: php artisan migrate:fresh --force
+      shell: php artisan migrate --force
       args:
-        chdir: /var/www/laravel-app
-      become: yes
-      become_user: www-data
-      environment:
-        HOME: /tmp
-
-    - name: Fix Storage Permissions
-      file:
-        path: "{{ item }}"
-        owner: www-data
-        group: www-data
-        mode: '0777'
-        recurse: yes
-      loop:
-        - /var/www/laravel-app/storage
+        chdir: /var/www/laravel
