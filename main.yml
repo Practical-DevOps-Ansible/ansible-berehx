@@ -1,1 +1,102 @@
 ---
+---
+- name: Setup MariaDB Server
+  hosts: db
+  become: yes
+  tasks:
+    - name: Install MariaDB and Python MySQL support
+      apt:
+        name: [mariadb-server, python3-mysqldb]
+        state: present
+        update_cache: yes
+
+    - name: Start MariaDB
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Create Database
+      mysql_db:
+        name: "{{ db_name }}"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create DB User
+      mysql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_pass }}"
+        priv: "{{ db_name }}.*:ALL"
+        host: "%"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Allow Remote Connections
+      lineinfile:
+        path: /etc/mysql/mariadb.conf.d/50-server.cnf
+        regexp: '^bind-address'
+        line: 'bind-address = 0.0.0.0'
+      notify: Restart MariaDB
+
+  handlers:
+    - name: Restart MariaDB
+      service:
+        name: mariadb
+        state: restarted
+
+- name: Setup Apache and Laravel App
+  hosts: server
+  become: yes
+  tasks:
+    - name: Install Apache and PHP
+      apt:
+        name: [apache2, php, libapache2-mod-php, php-mysql, php-xml, git, curl]
+        state: present
+        update_cache: yes
+
+    - name: Clone App
+      git:
+        repo: 'https://github.com/Practical-DevOps/app-for-devops.git'
+        dest: /var/www/laravel-app
+        force: yes
+
+    - name: Configure .env file
+      shell: |
+        cp .env.example .env
+        sed -i 's/DB_HOST=.*/DB_HOST={{ db_host }}/' .env
+        sed -i 's/DB_DATABASE=.*/DB_DATABASE={{ db_name }}/' .env
+        sed -i 's/DB_USERNAME=.*/DB_USERNAME={{ db_user }}/' .env
+        sed -i 's/DB_PASSWORD=.*/DB_PASSWORD={{ db_pass }}/' .env
+      args:
+        chdir: /var/www/laravel-app
+
+    - name: Set Permissions
+      file:
+        path: /var/www/laravel-app/storage
+        owner: www-data
+        group: www-data
+        recurse: yes
+
+    - name: Apache Config
+      copy:
+        dest: /etc/apache2/sites-available/laravel.conf
+        content: |
+          <VirtualHost *:80>
+              DocumentRoot /var/www/laravel-app/public
+              <Directory /var/www/laravel-app/public>
+                  AllowOverride All
+                  Require all granted
+              </Directory>
+          </VirtualHost>
+
+    - name: Enable Site
+      shell: |
+        a2ensite laravel.conf
+        a2dissite 000-default.conf
+      notify: Restart Apache
+
+  handlers:
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
