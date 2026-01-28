@@ -49,7 +49,7 @@
   tasks:
     - name: Install Dependencies
       apt:
-        name: [apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, git, curl, unzip]
+        name: [apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, git, curl, unzip, sqlite3, php-sqlite3]
         state: present
         update_cache: yes
 
@@ -79,13 +79,15 @@
         owner: www-data
         group: www-data
 
-    - name: Update .env database settings
+    - name: Update .env settings
       lineinfile:
         path: /var/www/laravel-app/.env
         regexp: "{{ item.regexp }}"
         line: "{{ item.line }}"
       loop:
-        - { regexp: '^DB_HOST=', line: 'DB_HOST={{ db_host }}' }
+        - { regexp: '^DB_CONNECTION=', line: 'DB_CONNECTION=mysql' }
+        - { regexp: '^DB_HOST=', line: 'DB_HOST=127.0.0.1' }
+        - { regexp: '^DB_PORT=', line: 'DB_PORT=3306' }
         - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE={{ db_name }}' }
         - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME={{ db_user }}' }
         - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD={{ db_pass }}' }
@@ -100,7 +102,7 @@
         HOME: /tmp
 
     - name: Generate App Key
-      shell: php artisan key:generate
+      shell: php artisan key:generate --force
       args:
         chdir: /var/www/laravel-app
       become: yes
@@ -112,7 +114,13 @@
         chdir: /var/www/laravel-app
       become: yes
       become_user: www-data
-      ignore_errors: yes
+
+    - name: Optimize Laravel
+      shell: php artisan config:clear
+      args:
+        chdir: /var/www/laravel-app
+      become: yes
+      become_user: www-data
 
     - name: Configure Apache VirtualHost
       copy:
