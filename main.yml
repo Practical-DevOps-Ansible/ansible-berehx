@@ -21,15 +21,16 @@
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
-    - name: Create DB User with Native Password
+    - name: Create DB User (Multiple Hosts)
       mysql_user:
         name: "{{ db_user }}"
         password: "{{ db_pass }}"
         priv: "{{ db_name }}.*:ALL"
-        host: "%"
+        host: "{{ item }}"
         state: present
         plugin: mysql_native_password
         login_unix_socket: /var/run/mysqld/mysqld.sock
+      loop: ['%', 'localhost', '127.0.0.1']
 
     - name: Allow Remote Connections
       lineinfile:
@@ -116,12 +117,11 @@
       become: yes
       become_user: www-data
 
-    - name: Clear Cache
-      shell: php artisan config:clear
-      args:
-        chdir: /var/www/laravel-app
-      become: yes
-      become_user: www-data
+    - name: Fix storage permissions
+      file:
+        path: /var/www/laravel-app/storage
+        mode: '0777'
+        recurse: yes
 
     - name: Configure Apache VirtualHost
       copy:
@@ -130,13 +130,12 @@
           <VirtualHost *:80>
               DocumentRoot /var/www/laravel-app/public
               <Directory /var/www/laravel-app/public>
-                  Options Indexes FollowSymLinks
                   AllowOverride All
                   Require all granted
               </Directory>
           </VirtualHost>
 
-    - name: Enable Site and Rewrite Module
+    - name: Enable Site and Rewrite
       shell: |
         a2enmod rewrite
         a2ensite laravel.conf
