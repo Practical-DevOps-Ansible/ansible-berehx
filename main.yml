@@ -21,13 +21,14 @@
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
-    - name: Create DB User
+    - name: Create DB User with Native Password
       mysql_user:
         name: "{{ db_user }}"
         password: "{{ db_pass }}"
         priv: "{{ db_name }}.*:ALL"
         host: "%"
         state: present
+        plugin: mysql_native_password
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
     - name: Allow Remote Connections
@@ -49,7 +50,7 @@
   tasks:
     - name: Install Dependencies
       apt:
-        name: [apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, git, curl, unzip, sqlite3, php-sqlite3]
+        name: [apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, git, curl, unzip]
         state: present
         update_cache: yes
 
@@ -115,7 +116,7 @@
       become: yes
       become_user: www-data
 
-    - name: Optimize Laravel
+    - name: Clear Cache
       shell: php artisan config:clear
       args:
         chdir: /var/www/laravel-app
