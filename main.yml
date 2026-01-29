@@ -22,13 +22,14 @@
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
-    - name: Database User
+    - name: Database User with Native Password
       mysql_user:
         name: lrv
         password: password123
         priv: "lrv.*:ALL"
         host: "localhost"
         state: present
+        plugin: mysql_native_password
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
     - name: Install Composer CLI
@@ -66,9 +67,8 @@
         - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=lrv' }
         - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME=lrv' }
         - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD=password123' }
-        - { regexp: '^SESSION_DRIVER=', line: 'SESSION_DRIVER=array' }
-        - { regexp: '^APP_ENV=', line: 'APP_ENV=local' }
-        - { regexp: '^APP_DEBUG=', line: 'APP_DEBUG=true' }
+        - { regexp: '^APP_URL=', line: 'APP_URL=http://localhost' }
+        - { regexp: '^SESSION_DRIVER=', line: 'SESSION_DRIVER=file' }
 
     - name: Composer Install
       become_user: www-data
@@ -83,6 +83,7 @@
       shell: |
         php artisan key:generate --force
         php artisan migrate:fresh --seed --force
+        php artisan cache:clear
         php artisan config:clear
       args:
         chdir: /var/www/laravel-app
