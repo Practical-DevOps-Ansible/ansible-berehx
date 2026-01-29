@@ -24,16 +24,16 @@
 
     - name: Database Setup
       mysql_db:
-        name: "{{ db_name }}"
+        name: lrv
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
     - name: Database User
       mysql_user:
-        name: "{{ db_user }}"
-        password: "password123" # Використовуємо стабільний пароль для тесту
-        priv: "{{ db_name }}.*:ALL"
-        host: "127.0.0.1"
+        name: lrv
+        password: password123
+        priv: "lrv.*:ALL"
+        host: "localhost"
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
@@ -68,11 +68,12 @@
         regexp: "{{ item.regexp }}"
         line: "{{ item.line }}"
       loop:
+        - { regexp: '^DB_CONNECTION=', line: 'DB_CONNECTION=mysql' }
         - { regexp: '^DB_HOST=', line: 'DB_HOST=127.0.0.1' }
-        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE={{ db_name }}' }
-        - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME={{ db_user }}' }
+        - { regexp: '^DB_PORT=', line: 'DB_PORT=3306' }
+        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=lrv' }
+        - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME=lrv' }
         - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD=password123' }
-        - { regexp: '^SESSION_DRIVER=', line: 'SESSION_DRIVER=file' }
 
     - name: Composer Install
       become_user: www-data
@@ -88,7 +89,6 @@
         php artisan key:generate --force
         php artisan migrate:fresh --seed --force
         php artisan config:clear
-        php artisan cache:clear
       args:
         chdir: /var/www/laravel-app
 
