@@ -1,151 +1,98 @@
 ---
-- name: Setup MariaDB Server
-  hosts: db
+- name: Setup MariaDB and Laravel
+  hosts: all
   become: yes
   tasks:
-    - name: Install MariaDB and Python support
+    - name: Install System Packages
       apt:
-        name: [mariadb-server, python3-mysqldb]
+        name: [mariadb-server, python3-mysqldb, apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, git, curl, unzip]
         state: present
         update_cache: yes
 
-    - name: Ensure MariaDB is running
+    - name: Services Start
       service:
-        name: mariadb
+        name: "{{ item }}"
         state: started
         enabled: yes
+      loop: [mariadb, apache2]
 
-    - name: Create Database
+    - name: DB Setup
       mysql_db:
         name: "{{ db_name }}"
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
-    - name: Create DB User
+    - name: DB User Setup
       mysql_user:
         name: "{{ db_user }}"
         password: "{{ db_pass }}"
         priv: "{{ db_name }}.*:ALL"
-        host: "%"
+        host: "localhost"
         state: present
-        plugin: mysql_native_password
         login_unix_socket: /var/run/mysqld/mysqld.sock
-
-    - name: Allow Remote Connections
-      lineinfile:
-        path: /etc/mysql/mariadb.conf.d/50-server.cnf
-        regexp: '^bind-address'
-        line: 'bind-address = 0.0.0.0'
-      notify: Restart MariaDB
-
-  handlers:
-    - name: Restart MariaDB
-      service:
-        name: mariadb
-        state: restarted
-
-- name: Setup Apache and Laravel App
-  hosts: server
-  become: yes
-  tasks:
-    - name: Install Dependencies
-      apt:
-        name: [apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, git, curl, unzip]
-        state: present
-        update_cache: yes
 
     - name: Install Composer
       shell: curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
       args:
         creates: /usr/local/bin/composer
 
-    - name: Clone Repository
+    - name: Clone App
       git:
         repo: 'https://github.com/Practical-DevOps/app-for-devops.git'
         dest: /var/www/laravel-app
         force: yes
 
-    - name: Set Ownership
-      file:
-        path: /var/www/laravel-app
-        owner: www-data
-        group: www-data
-        recurse: yes
-        state: directory
-
     - name: Configure .env
-      become_user: www-data
-      shell: cp .env.example .env
+      shell: |
+        cp .env.example .env
+        chown www-data:www-data .env
       args:
         chdir: /var/www/laravel-app
         creates: /var/www/laravel-app/.env
 
-    - name: Update .env settings
+    - name: Update .env DB Settings
       lineinfile:
         path: /var/www/laravel-app/.env
         regexp: "{{ item.regexp }}"
         line: "{{ item.line }}"
-        owner: www-data
-        group: www-data
       loop:
         - { regexp: '^DB_HOST=', line: 'DB_HOST=127.0.0.1' }
         - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE={{ db_name }}' }
         - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME={{ db_user }}' }
         - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD={{ db_pass }}' }
 
-    - name: Install Composer Dependencies
+    - name: Install PHP Dependencies
+      become_user: www-data
       shell: composer install --no-interaction --no-dev
       args:
         chdir: /var/www/laravel-app
-      become: yes
-      become_user: www-data
       environment:
         HOME: /tmp
 
-    - name: Generate App Key
-      shell: php artisan key:generate --force
+    - name: Laravel Prep
+      become_user: www-data
+      shell: |
+        php artisan key:generate --force
+        php artisan migrate --force
       args:
         chdir: /var/www/laravel-app
-      become: yes
-      become_user: www-data
-      environment:
-        HOME: /tmp
 
-    - name: Run Migrations
-      shell: php artisan migrate --force
-      args:
-        chdir: /var/www/laravel-app
-      become: yes
-      become_user: www-data
-      environment:
-        HOME: /tmp
-
-    - name: Final Permissions Fix
+    - name: Fix Permissions
       file:
-        path: /var/www/laravel-app/storage
+        path: "{{ item }}"
         owner: www-data
         group: www-data
-        mode: '0777'
+        mode: '0775'
+        state: directory
         recurse: yes
+      loop:
+        - /var/www/laravel-app/storage
+        - /var/www/laravel-app/bootstrap/cache
 
-    - name: Configure Apache VHost
+    - name: Apache Config
       copy:
         dest: /etc/apache2/sites-available/000-default.conf
         content: |
           <VirtualHost *:80>
               DocumentRoot /var/www/laravel-app/public
-              <Directory /var/www/laravel-app/public>
-                  AllowOverride All
-                  Require all granted
-              </Directory>
-          </VirtualHost>
-
-    - name: Enable Rewrite
-      shell: a2enmod rewrite
-      notify: Restart Apache
-
-  handlers:
-    - name: Restart Apache
-      service:
-        name: apache2
-        state: restarted
+              <Directory /var/www/laravel-app
