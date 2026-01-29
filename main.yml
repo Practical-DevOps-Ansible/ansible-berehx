@@ -5,7 +5,7 @@
   tasks:
     - name: Install System Packages
       apt:
-        name: [mariadb-server, python3-mysqldb, apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, git, curl, unzip]
+        name: [mariadb-server, python3-mysqldb, apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, php-bcmath, php-tokenizer, git, curl, unzip]
         state: present
         update_cache: yes
 
@@ -31,7 +31,7 @@
     - name: Database User
       mysql_user:
         name: "{{ db_user }}"
-        password: "{{ db_pass }}"
+        password: "password123" # Використовуємо стабільний пароль для тесту
         priv: "{{ db_name }}.*:ALL"
         host: "127.0.0.1"
         state: present
@@ -71,7 +71,8 @@
         - { regexp: '^DB_HOST=', line: 'DB_HOST=127.0.0.1' }
         - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE={{ db_name }}' }
         - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME={{ db_user }}' }
-        - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD={{ db_pass }}' }
+        - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD=password123' }
+        - { regexp: '^SESSION_DRIVER=', line: 'SESSION_DRIVER=file' }
 
     - name: Composer Install
       become_user: www-data
@@ -85,8 +86,7 @@
       become_user: www-data
       shell: |
         php artisan key:generate --force
-        php artisan migrate:fresh --force
-        php artisan db:seed --force || true
+        php artisan migrate:fresh --seed --force
         php artisan config:clear
         php artisan cache:clear
       args:
