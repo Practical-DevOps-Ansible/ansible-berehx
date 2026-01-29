@@ -9,6 +9,12 @@
         state: present
         update_cache: yes
 
+    - name: Create Ansible tmp directory
+      file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: '1777'
+
     - name: Services Start
       service:
         name: "{{ item }}"
@@ -42,10 +48,16 @@
         dest: /var/www/laravel-app
         force: yes
 
+    - name: Fix ownership before composer
+      file:
+        path: /var/www/laravel-app
+        owner: www-data
+        group: www-data
+        recurse: yes
+
     - name: Configure .env
-      shell: |
-        cp .env.example .env
-        chown www-data:www-data .env
+      become_user: www-data
+      shell: cp .env.example .env
       args:
         chdir: /var/www/laravel-app
         creates: /var/www/laravel-app/.env
@@ -95,4 +107,13 @@
         content: |
           <VirtualHost *:80>
               DocumentRoot /var/www/laravel-app/public
-              <Directory /var/www/laravel-app
+              <Directory /var/www/laravel-app/public>
+                  AllowOverride All
+                  Require all granted
+              </Directory>
+          </VirtualHost>
+
+    - name: Apache Finalize
+      shell: |
+        a2enmod rewrite
+        systemctl restart apache2
