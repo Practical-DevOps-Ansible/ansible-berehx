@@ -5,15 +5,9 @@
   tasks:
     - name: Install System Packages
       apt:
-        name: [mariadb-server, python3-mysqldb, apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, php-bcmath, php-tokenizer, git, curl, unzip]
+        name: [mariadb-server, python3-mysqldb, apache2, php, libapache2-mod-php, php-mysql, php-xml, php-curl, php-mbstring, php-zip, php-bcmath, git, curl, unzip]
         state: present
         update_cache: yes
-
-    - name: Fix Ansible Tmp
-      file:
-        path: /tmp/.ansible/tmp
-        state: directory
-        mode: '1777'
 
     - name: Start Services
       service:
@@ -57,10 +51,10 @@
 
     - name: Prepare .env
       become_user: www-data
-      shell: cp .env.example .env
-      args:
-        chdir: /var/www/laravel-app
-        creates: /var/www/laravel-app/.env
+      copy:
+        src: /var/www/laravel-app/.env.example
+        dest: /var/www/laravel-app/.env
+        remote_src: yes
 
     - name: Update .env Config
       lineinfile:
@@ -68,12 +62,13 @@
         regexp: "{{ item.regexp }}"
         line: "{{ item.line }}"
       loop:
-        - { regexp: '^DB_CONNECTION=', line: 'DB_CONNECTION=mysql' }
         - { regexp: '^DB_HOST=', line: 'DB_HOST=127.0.0.1' }
-        - { regexp: '^DB_PORT=', line: 'DB_PORT=3306' }
         - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=lrv' }
         - { regexp: '^DB_USERNAME=', line: 'DB_USERNAME=lrv' }
         - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD=password123' }
+        - { regexp: '^SESSION_DRIVER=', line: 'SESSION_DRIVER=array' }
+        - { regexp: '^APP_ENV=', line: 'APP_ENV=local' }
+        - { regexp: '^APP_DEBUG=', line: 'APP_DEBUG=true' }
 
     - name: Composer Install
       become_user: www-data
@@ -83,7 +78,7 @@
       environment:
         HOME: /tmp
 
-    - name: Laravel Setup Commands
+    - name: Laravel Setup
       become_user: www-data
       shell: |
         php artisan key:generate --force
